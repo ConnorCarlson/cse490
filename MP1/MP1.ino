@@ -93,20 +93,13 @@ void updateCrossFade(int* currValues, int step) {
 
   if(currValues[_curFadingUpColor] > MAX_COLOR_VALUE){
     currValues[_curFadingUpColor] = MAX_COLOR_VALUE;
-    _curFadingUpColor = (RGB)((int)_curFadingUpColor + 1);
+    _curFadingUpColor = (RGB)(((int)_curFadingUpColor + 1) % NUM_COLORS);
 
-    if(_curFadingUpColor > (int)BLUE){
-      _curFadingUpColor = RED;
-    }
   }
 
   if(currValues[_curFadingDownColor] < 0){
     currValues[_curFadingDownColor] = 0;
-    _curFadingDownColor = (RGB)((int)_curFadingDownColor + 1);
-
-    if(_curFadingDownColor > (int)BLUE){
-      _curFadingDownColor = RED;
-    }
+    _curFadingDownColor = (RGB)(((int)_curFadingDownColor + 1) % NUM_COLORS);
   }
   
 }
@@ -116,21 +109,15 @@ void writeColorFromVolume(int volume) {
   int _tempFadingUpColor=1;
   int _tempFadingDownColor=0;
   while(volume >= MAX_ANALOG_OUT){
-    currValues[_tempFadingUpColor]=255;
-    _tempFadingUpColor = (RGB)((int)_curFadingUpColor + 1);
-    if(_tempFadingUpColor > (int)BLUE){
-      _tempFadingUpColor = RED;
-    }
+    currValues[_tempFadingUpColor]=MAX_ANALOG_OUT;
+    _tempFadingUpColor = (RGB)(((int)_tempFadingUpColor + 1) % NUM_COLORS);
     currValues[_tempFadingDownColor]=0;
-    _tempFadingDownColor = (RGB)((int)_curFadingDownColor + 1);
-    if(_tempFadingDownColor > (int)BLUE){
-      _tempFadingDownColor = RED;
-    }
+    _tempFadingDownColor = (RGB)(((int)_tempFadingDownColor + 1) % NUM_COLORS);
     volume -= MAX_ANALOG_OUT;
   }
 
-  currValues[_curFadingUpColor] += volume;
-  currValues[_curFadingDownColor] -= volume;
+  currValues[_tempFadingUpColor] += volume;
+  currValues[_tempFadingDownColor] -= volume;
 
   setColor(currValues[0], currValues[1], currValues[2]);
   
@@ -138,18 +125,18 @@ void writeColorFromVolume(int volume) {
 
 void mode0() {
   int lrInput = analogRead(INPUT_LR_PIN);
-  int ledVal = MAX_ANALOG_OUT - map(lrInput, 0, 1023, 0, 255);
+  int ledVal = MAX_ANALOG_OUT - map(lrInput, 0, MAX_ANALOG_IN, 0, MAX_ANALOG_OUT);
   
   updateCrossFade(crossFadeValues, FADE_STEP);
   int newValues[3];
   int max = 0;
-  for (int i = 0; i <= 2; i++) {
+  for (int i = 0; i < NUM_COLORS; i++) {
     if(crossFadeValues[i] > max) {
       max = crossFadeValues[i];
     }
       
   }
-  for (int i = 0; i <= 2; i++) {
+  for (int i = 0; i < NUM_COLORS; i++) {
     if(crossFadeValues[i] == max){ 
       newValues[i] = ledVal;
     } else {
@@ -173,7 +160,7 @@ void mode1() {
   int max = 0;
 
   if(colorButton.isActive()){
-    for (int i = 0; i <= 2; i++) {
+    for (int i = 0; i < NUM_COLORS; i++) {
     
       total[i] = total[i] - readings[i][readIndex[i]];
    
@@ -192,9 +179,9 @@ void mode1() {
       }
     }
   
-    for (int i = 0; i <= 2; i++) {
+    for (int i = 0; i < NUM_COLORS; i++) {
       if(average[i] == max){ 
-        analogWrite(LEDS[i], 255);
+        analogWrite(LEDS[i], MAX_ANALOG_OUT);
       } else {
         analogWrite(LEDS[i], average[i] > MAX_ANALOG_OUT ? MAX_ANALOG_OUT : (int)(MAX_ANALOG_OUT*(double)((double)average[i]/(double)max)));
       }
@@ -209,11 +196,11 @@ void mode2() {
   unsigned long startMillis= millis();
  
   unsigned int signalMax = 0;
-  unsigned int signalMin = 1024;
+  unsigned int signalMin = MAX_ANALOG_IN;
  
   while (millis() - startMillis < 100) {
      int sample = analogRead(MIC_INPUT_PIN); 
-     if (sample < 1024){
+     if (sample < MAX_ANALOG_IN){
         if (sample > signalMax) {
             signalMax = sample;
         }
