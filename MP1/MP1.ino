@@ -203,7 +203,7 @@ void mode2() {
      if (sample < MAX_ANALOG_IN){
         if (sample > signalMax) {
             signalMax = sample;
-        }
+        }b 
         else if (sample < signalMin) {
            signalMin = sample;
         }
