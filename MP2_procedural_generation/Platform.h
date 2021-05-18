@@ -1,8 +1,8 @@
 class Platform{
 
   private:
-    int size;
-    int x;
+    byte size;
+    byte x;
     
   public:
     // Constructor
@@ -12,11 +12,11 @@ class Platform{
     };
 
 
-    void updateX(int newX) {
+    void updateX(byte newX) {
       x = newX;
     }
 
-    void updateSize(int newSize) {
+    void updateSize(byte newSize) {
       size = newSize;
     }
 

@@ -3,23 +3,23 @@
 
 #include <Adafruit_SSD1306.h>
 
-class Character{
+class Bullet {
 
   private:
-    const byte width = 7;
-    const byte height = 10;
+    const byte width = 5;
+    const byte height = 5;
     int y;
     int x;
     int velocityX;
     int velocityY;
-    
+
   public:
     // Constructor
-    Character(int charX, int charY, int charVX, int charVY) {
-      x = charX;
-      y = charY;
-      velocityX = charVX;
-      velocityY = charVY;
+    Bullet() {
+      x = -1000;
+      y = 1000;
+      velocityX = 0;
+      velocityY = 0;
     };
 
 
@@ -70,5 +70,15 @@ class Character{
 
     int getHeight() {
       return height;
+    }
+    void move() {
+      x = x + velocityX;
+      y = y + velocityY;
+
+      if (y > 128 || y + width < 0 || x > 64 || x + width < 0) {
+        x = -1000;
+      }
+
+
     }
 };
