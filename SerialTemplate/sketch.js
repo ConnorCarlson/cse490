@@ -10,9 +10,12 @@
 let pHtmlMsg;
 let serialOptions = { baudRate: 115200  };
 let serial;
+let x;
+let y;
+let z;
 
 function setup() {
-  createCanvas(640, 480);
+  createCanvas(640, 480, WEBGL);
 
   // Setup Web Serial using serial.js
   serial = new Serial();
@@ -29,7 +32,14 @@ function setup() {
 }
 
 function draw() {
-  background(100);
+  background(220);
+  // rotateX(-z*.01);
+  rotateX(-y*.015);
+  rotateZ(-x*.015);
+  // rotateZ(z*.01)
+  // rotateZ(z * 0.0001);
+  
+  box(200, 20, 100);
 }
 
 /**
@@ -69,8 +79,13 @@ function onSerialConnectionClosed(eventSender) {
  * @param {String} newData new data received over serial
  */
 function onSerialDataReceived(eventSender, newData) {
-  console.log("onSerialDataReceived", newData);
+  // console.log("onSerialDataReceived", newData);
   pHtmlMsg.html("onSerialDataReceived: " + newData);
+  let split = newData.split(',');
+  x = parseFloat(split[0]);
+  y = parseFloat(split[1]);
+  z = parseFloat(split[2]-45);
+
 }
 
 /**
