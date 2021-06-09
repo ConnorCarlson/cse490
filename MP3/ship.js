@@ -1,94 +1,90 @@
-const ACC = .1;
-const MAX_V = 5;
-const WIDTH = 20;
-const HEIGHT = 40;
-const FRICT = .5;
-
+const MAX_SHIP_HEALTH = 100;
+const MAX_SHIP_AMMO = 50;
+const MAX_SHIP_ENERGY = 100;
 class Ship {
-    x;
-    y;
-    vx;
-    vy;
-    angle;
-    lastShotTime;
-    health;
-    constructor(x, y, vx, vy, angle, canvasW, canvasH) {
-        this.x = x;
-        this.y = y;
-        this.vx = vx;
-        this.vy = vy;
-        this.angle = angle;
-        this.canvasW = canvasW;
-        this.canvasH = canvasH;
-        this.health = 10;
-        this.lastShotTime = 0;
+	x;
+	y;
+	vx;
+	vy;
+	lastShotTime;
+	health;
+    ammo;
+    energy;
+    sheild;
+	constructor(x, y, vx, vy, canvasW, canvasH) {
+		this.x = x;
+		this.y = y;
+		this.vx = vx;
+		this.vy = vy;
+		this.canvasW = canvasW;
+		this.canvasH = canvasH;
+		this.health = MAX_SHIP_HEALTH;
+		this.lastShotTime = 0;
+        this.ammo = MAX_SHIP_AMMO;
+        this.energy = MAX_SHIP_ENERGY;
+        this.sheild = false;
+	}
+
+	updatePos() {
+		this.x += this.vx;
+		this.y += this.vy;
+		if (this.x + SHIP_WIDTH / 2 > this.canvasW) {
+			this.x = this.canvasW - SHIP_WIDTH;
+		}
+		if (this.x - SHIP_WIDTH / 2 < 0) {
+			this.x = SHIP_WIDTH / 2;
+		}
+
+		this.health = this.health < 0 ? 0 : this.health;
+	}
+
+	shoot() {
+		this.lastShotTime = 0;
+        this.ammo = this.ammo - 1;
+	}
+
+	draw() {
+		stroke(255);
+        noFill();
+        if(this.sheild) {
+            circle(this.x, this.y, SHIP_HEIGHT+10);
+        }
+        fill(255);
+
+		push();
+		translate(ship1.x, ship1.y);
+		triangle(-SHIP_WIDTH / 2, SHIP_HEIGHT / 2, 0, -SHIP_HEIGHT / 2, SHIP_WIDTH / 2, SHIP_HEIGHT / 2);
+        
+		pop();
+	}
+
+    canShoot() {
+        return this.lastShotTime > BULLET_DELAY && this.ammo > 0;
     }
 
-    rotate(direction) {
-        if(direction == 0) {
-            this.angle = (this.angle + 5) % 360;
+    damage(damage) {
+        this.health = damage > this.health ? 0 : this.health - damage;
+    }
+
+    heal(health) {
+        this.health = this.healht + health > MAX_SHIP_HEALTH ? MAX_SHIP_HEALTH : this.health + health;
+    }
+
+    reload() {
+        this.ammo = MAX_SHIP_AMMO;
+    }
+
+    regenEnergy() {
+        if(this.energy < MAX_SHIP_ENERGY) {
+            this.energy = this.energy + 1;
+        }
+    }
+
+    subtractEnergy(energy) {
+        if(energy > this.energy) {
+            this.energy = 0;
         } else {
-            this.angle = this.angle - 5 < 0 ? 360 - 5 : this.angle-5;
-        }
-
-    }
-
-    updatePos() {
-        this.x += this.vx < 0 ?  (this.vx + FRICT > 0 ? 0 : this.vx + FRICT) : (this.vx - FRICT  < 0 ? 0 : this.vx - FRICT);
-        this.y += this.vy < 0 ? (this.vy + FRICT  > 0 ? 0 : this.vy + FRICT) : (this.vy - FRICT  < 0 ? 0 : this.vy - FRICT);
-        if(this.x + HEIGHT/2 > this.canvasW) {
-            this.x = this.canvasW - HEIGHT;
-            this.vx = this.vx * -1;
-            this.health = this.health - 1;
-        }
-        if(this.x - HEIGHT/2 < 0) {
-            this.x = HEIGHT/2;
-            this.vx = this.vx * -1;
-            this.health = this.health - 1;
-        }
-        if(this.y + HEIGHT/2 > this.canvasH) {
-            this.y = this.canvasH - HEIGHT;
-            this.vy = this.vy * -1;
-            this.health = this.health - 1;
-        }
-        if(this.y - HEIGHT/2 < 0) {
-            this.y = HEIGHT/2;
-            this.vy = this.vy * -1;
-            this.health = this.health - 1;
-        }
-        this.health = this.health < 0 ? 0 : this.health;
-    }
-
-    thrust() {
-        let ax = Math.sin(this.angle * Math.PI/180) * ACC;
-        let ay = -Math.cos(this.angle * Math.PI/180) * ACC;
-        
-        
-
-        this.vx = this.vx + ax;
-        this.vy = this.vy + ay;
-
-        if(this.vx < -MAX_V) {
-            this.vx = -MAX_V;
-        }
-        if(this.vy < -MAX_V) {
-            this.vy = -MAX_V;
-        }
-        if(this.vx > MAX_V) {
-            this.vx = MAX_V;
-        }
-        if(this.vy > MAX_V) {
-            this.vy = MAX_V;
+            this.energy = this.energy - energy;
         }
     }
-    shoot() {
-        this.lastShotTime = 0;
-    }
-    getWidth() {
-        return WIDTH;
-    }
-    getHeight() {
-        return HEIGHT;
-    }
-
 }

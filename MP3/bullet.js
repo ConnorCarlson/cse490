@@ -1,6 +1,5 @@
-const VEL = 6;
-const DIAM = 5;
-const SHIP_HEIGHT = 40;
+const BULLET_VEL = 10;
+const BULLET_DIAM = 5;
 class Bullet {
     x;
     y;
@@ -10,10 +9,10 @@ class Bullet {
     constructor(x, y, angle, canvasW, canvasH) {
         
         this.angle = angle;
-        this.vx = Math.sin(this.angle * Math.PI/180) * VEL;
-        this.vy = -Math.cos(this.angle * Math.PI/180) * VEL;
-        this.x = x + (SHIP_HEIGHT/4) * this.vx;
-        this.y = y + (SHIP_HEIGHT/4) * this.vy;
+        this.vx = Math.sin(this.angle * Math.PI/180) * BULLET_VEL;
+        this.vy = -Math.cos(this.angle * Math.PI/180) * BULLET_VEL;
+        this.x = x + (SHIP_HEIGHT/10) * this.vx;
+        this.y = y + (SHIP_HEIGHT/10) * this.vy;
         this.canvasW = canvasW;
         this.canvasH = canvasH;
     }
@@ -24,7 +23,10 @@ class Bullet {
         this.y += this.vy;
     }
 
-    getDiam() {
-        return DIAM;
+    draw() {
+        stroke(255);
+		fill(255);
+        circle(this.x, this.y, BULLET_DIAM);
     }
+
 }

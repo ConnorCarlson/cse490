@@ -6,31 +6,58 @@
 // http://makeabilitylab.io/
 //
 
-let pHtmlMsg;
+const SHIP_WIDTH = 20;
+const SHIP_HEIGHT = 40;
+const BULLET_DELAY = 10;
+const TURRET_BULLET_DELAY = 40;
+const SCORE_ODDS = 500;
+const PACK_WIDTH = 20;
+const SHEILD_COOLDOWN_LENGTH = 80;
+const options = {
+	flipHorizontal: false, // boolean value for if the video should be flipped, defaults to false
+	maxContinuousChecks: Infinity, // How many frames to go without running the bounding box detector. Defaults to infinity, but try a lower value if the detector is consistently producing bad predictions.
+	detectionConfidence: 0.5, // Threshold for discarding a prediction. Defaults to 0.8.
+	scoreThreshold: 0.99, // A threshold for removing multiple (likely duplicate) detections based on a "non-maximum suppression" algorithm. Defaults to 0.75
+	iouThreshold: 0.3, // A float representing the threshold for deciding whether boxes overlap too much in non-maximum suppression. Must be between [0, 1]. Defaults to 0.3.
+};
+const SCROLL_VEL = 5;
+
+let mode = 0;
+let timeSinceLastAstroid;
+let timeSinceLastTurret;
 let serialOptions = { baudRate: 115200 };
 let serial;
 let ship1;
 let ship2;
 let healthPrev;
-const ship1StartX = 900;
-const ship1StartY = 50;
-const ship2StartX = 100;
-const ship2StartY = 100;
+let ammoPrev;
+let energyPrev;
 let bullets = [];
+let enemyBullets = [];
+let astroids = [];
+let packs = [];
+let turrets = [];
 let healthPack;
-let spec = {};
-spec.update = 'qlearn'; // qlearn | sarsa
-spec.gamma = 0.9; // discount factor, [0, 1)
-spec.epsilon = 0.2; // initial epsilon for epsilon-greedy policy, [0, 1)
-spec.alpha = 0.01; // value function learning rate
-spec.experience_add_every = 10; // number of time steps before we add another experience to replay memory
-spec.experience_size = 10000; // size of experience replay memory
-spec.learning_steps_per_iteration = 20;
-spec.tderror_clamp = 1.0; // for robustness
-spec.num_hidden_units = 100; //1000; // number of neurons in hidden layer
+let score;
+let sheildCooldown;
+let loadingModel;
+let loadingVideo;
+
+let handpose;
+let video;
+let predictions = [];
 
 function setup() {
-	createCanvas(1000, 500);
+	createCanvas(1216, 912);
+	video = createCapture(VIDEO);
+	video.size(1216, 912);
+	handpose = ml5.handpose(options, modelReady);
+	// handpose.on('predict', (results) => {
+	// 	predictions = results;
+	// });
+	frameRate(200);
+
+	video.hide();
 
 	// Setup Web Serial using serial.js
 	serial = new Serial();
@@ -43,109 +70,289 @@ function setup() {
 	serial.autoConnectAndOpenPreviouslyApprovedPort(serialOptions);
 
 	// Add in a lil <p> element to provide messages. This is optional
-	pHtmlMsg = createP('Click anywhere on this page to open the serial connection dialog');
-	ship1 = new Ship(ship1StartX, ship1StartY, 0, 0, 0, width, height);
+	ship1 = new Ship(width / 2, height - SHIP_HEIGHT - 5, 0, 0, width, height);
 	healthPrev = ship1.health;
-	// ship2 = new Ship(ship2StartX, ship2StartY, 0, 0, 0, width, height);
-	healthPack = new Health(width / 2, height / 2);
+	ammoPrev = ship1.ammo;
+	energyPrev = ship1.energy;
+	score = 0;
+	sheildCooldown = SHEILD_COOLDOWN_LENGTH;
 	angleMode(DEGREES);
-	// start();
-	// start2();
+	timeSinceLastAstroid = 0;
+	timeSinceLastTurret = 0;
+	loadingModel = true;
+	loadingVideo = true;
 }
-
 
 async function serialWriteHealth() {
-
 	if (serial.isOpen()) {
-		console.log("Writing to serial: ", "HEATH:"+ship1.health*10);
-		serial.writeLine("HEALTH:"+ship1.health*10);
+		serial.writeLine('HEALTH:' + ship1.health);
 	}
-  }
-
-function draw() {
-	if(ship1.health != healthPrev) {
-		serialWriteHealth();
-		healthPrev = ship1.health;
-	}
-	ship1.updatePos();
-	
-	background(0);
-	// console.log(ship1.angle);
-	checkMovement();
-
-	stroke(0, 0, 255);
-	fill(0);
-
-	push();
-	let healthMult = ship1.getHeight() / 10;
-
-	translate(ship1.x, ship1.y);
-
-	rotate(ship1.angle);
-
-	circle(0, 0, ship1.getHeight() + 1);
-	triangle(
-		-ship1.getWidth() / 2,
-		ship1.getHeight() / 2,
-		0,
-		-ship1.getHeight() / 2,
-		ship1.getWidth() / 2,
-		ship1.getHeight() / 2
-	);
-	// rect(-ship1.getHeight() / 2, -ship1.getHeight() / 2 - 10, ship1.health * healthMult, 5);
-
-	pop();
-	// stroke(255);
-	// fill(0);
-
-	// push();
-	// translate(ship2.x, ship2.y);
-
-	// rotate(ship2.angle);
-
-	// circle(0, 0, ship2.getHeight() + 1);
-	// triangle(
-	// 	-ship2.getWidth() / 2,
-	// 	ship2.getHeight() / 2,
-	// 	0,
-	// 	-ship2.getHeight() / 2,
-	// 	ship2.getWidth() / 2,
-	// 	ship2.getHeight() / 2
-	// );
-	// rect(-ship2.getHeight() / 2, -ship2.getHeight() / 2 - 10, ship2.health * healthMult, 5);
-	// pop();
-	// rect(healthPack.x, healthPack.y, PACK_WIDTH, PACK_WIDTH);
-
-	drawBullets();
 }
 
-function checkMovement() {
-	if (keyIsDown(LEFT_ARROW)) {
-		ship1.rotate(0);
+async function serialWriteAmmo() {
+	if (serial.isOpen()) {
+		serial.writeLine('AMMO:' + ship1.ammo);
 	}
-	if (keyIsDown(RIGHT_ARROW)) {
-		ship1.rotate(1);
+}
+
+async function serialWriteEnergy() {
+	if (serial.isOpen()) {
+		serial.writeLine('ENERGY:' + ship1.energy);
 	}
-	if (keyIsDown(UP_ARROW)) {
-		ship1.thrust();
+}
+
+async function detectPose() {
+	handpose.predict(video, (results) => {
+		if (results.length > 0 && sheildCooldown > SHEILD_COOLDOWN_LENGTH && ship1.energy > 0) {
+			var a = results[0].annotations.thumb[3][0] - results[0].annotations.indexFinger[3][0];
+    		var b = results[0].annotations.thumb[3][1] - results[0].annotations.indexFinger[3][1];
+
+    		var c = Math.sqrt( a*a + b*b );
+			if(c < 50 && ship1.energy > 80) {
+				astroids = [];
+				turrets = [];
+				ship1.subtractEnergy(80);
+			} else {
+				ship1.sheild = true;
+				if(score%5 == 0) {
+					ship1.subtractEnergy(1);
+				}
+				
+			}
+			
+		} else {
+			if (ship1.sheild) {
+				sheildCooldown = 0;
+			}
+			ship1.sheild = false;
+		}
+	});
+}
+
+function modelReady() {
+	console.log('Model ready!');
+	loadingModel = false;
+}
+
+function loadeddata() {
+	console.log('data loaded!');
+	loadingVideo = false;
+}
+
+function draw() {
+	if (loadingModel || !video.loadedmetadata) {
+		console.log('loading');
+		return;
 	}
-	if (keyIsDown(32)) {
-		// if (Date.now() - ship1.lastShotTime > 200 || ship1.lastShotTime == null) {
-		// 	ship1.shoot();
-		// 	bullets.push(new Bullet(ship1.x, ship1.y, ship1.angle, width, height));
-		// }
+	background(0);
+
+	if(mode == 0) {
+		
+		startScreen();
+
+	} else if(mode == 1) {
+		if (ship1.health != healthPrev) {
+			serialWriteHealth();
+			healthPrev = ship1.health;
+		}
+		if (ship1.ammo != ammoPrev) {
+			serialWriteAmmo();
+			ammoPrev = ship1.ammo;
+		}
+		if (ship1.energy != energyPrev) {
+			serialWriteEnergy();
+			energyPrev = ship1.energy;
+		}
+		if(ship1.health == 0) {
+			mode = 2;
+		}
+		ship1.updatePos();
+		ship1.lastShotTime = ship1.lastShotTime + 1;
+		timeSinceLastAstroid = timeSinceLastAstroid + 1;
+		timeSinceLastTurret = timeSinceLastTurret + 1;
+		if (!ship1.sheild && score%30 == 0) {
+			ship1.regenEnergy();
+		}
+		detectPose();
+	
+		background(0);
+		ship1.draw();
+		updateBullets();
+		drawBullets();
+		updateAstroids();
+		drawAstroids();
+		checkBulletCollision();
+		updatePacks();
+		drawPacks();
+		checkPackCollisions();
+		score = score + 1;
+		sheildCooldown = sheildCooldown + 1;
+		drawScore();
+		
+		
+	} else {
+		endScreen();
 	}
-	if (keyIsDown(83)) {
-		saveToFile();
+	
+}
+
+function startScreen() {
+	textSize(50);
+	textAlign(CENTER);
+	fill(255);
+  	text("Asteroid Belt", width/2, height/2-50);
+	textSize(30);
+	text("Press Button To Start", width/2, height/2+60);
+}
+
+function endScreen() {
+	textSize(50);
+	textAlign(CENTER);
+	fill(255);
+  	text("Game Over", width/2, height/2-50);
+	textSize(30);
+	text("Score: " + score, width/2, height/2+60);
+}
+
+function drawScore() {
+	fill(0);
+	noStroke();
+	rect(0, 0, width, 50);
+	fill(255);
+	textAlign(LEFT);
+	textSize(20);
+	
+	text("Score: " + score, 10, 30);
+}
+
+function reset() {
+	ship1 = new Ship(width / 2, height - SHIP_HEIGHT - 5, 0, 0, width, height);
+	healthPrev = ship1.health;
+	ammoPrev = ship1.ammo;
+	energyPrev = ship1.energy;
+	score = 0;
+	angleMode(DEGREES);
+	timeSinceLastAstroid = 0;
+	timeSinceLastTurret = 0;
+	bullets = [];
+	enemyBullets = [];
+	astroids = [];
+	packs = [];
+	turrets = [];
+	mode = 1;
+
+	serialWriteHealth();
+	serialWriteEnergy();
+	serialWriteAmmo();
+
+}
+
+function updateAstroids() {
+	for (var i = astroids.length - 1; i >= 0; i--) {
+		astroids[i].updatePos();
+		if (astroids[i].y - astroids[i].diam > height) {
+			astroids.splice(i, 1);
+		}
+		if (astroids[i]) {
+			if (ship1.sheild) {
+				if (
+					collideCircleCircle(
+						ship1.x,
+						ship1.y,
+						SHIP_HEIGHT + 10,
+						astroids[i].x,
+						astroids[i].y,
+						astroids[i].diam
+					)
+				) {
+					astroids.splice(i, 1);
+				}
+			} else if (astroids[i].hitShip(ship1)) {
+				ship1.damage(ASTROID_DAMAGE * astroids[i].diam);
+				astroids.splice(i, 1);
+			}
+		}
 	}
-	if (keyIsDown(76)) {
-		loadFile();
+
+	for (var i = turrets.length - 1; i >= 0; i--) {
+		turrets[i].updatePos();
+		turrets[i].lastShotTime = turrets[i].lastShotTime + 1;
+		if (turrets[i].checkAngle(ship1) && turrets[i].canShoot()) {
+			turrets[i].shoot();
+			enemyBullets.push(new Bullet(turrets[i].x, turrets[i].y, turrets[i].angle));
+		}
+		if (turrets[i].y - turrets[i].diam > height) {
+			turrets.splice(i, 1);
+		}
+		if (turrets[i]) {
+			if (ship1.sheild) {
+				if (
+					collideCircleCircle(ship1.x, ship1.y, SHIP_HEIGHT + 10, turrets[i].x, turrets[i].y, TURRET_SIZE)
+				) {
+					turrets.splice(i, 1);
+				}
+			} else if (turrets[i].hitShip(ship1)) {
+				ship1.damage(ASTROID_DAMAGE * 40);
+				turrets.splice(i, 1);
+			}
+		}
+	}
+	let newAstroid = new Astroid(
+		Math.floor(Math.random() * width),
+		-MAX_SIZE_ASTROID,
+		Math.floor(Math.random() * MAX_SIZE_ASTROID) + MIN_SIZE_ASTROID
+	);
+	if (newAstroid.canSpawn(astroids, turrets, score, timeSinceLastAstroid, packs)) {
+		timeSinceLastAstroid = 0;
+		astroids.push(newAstroid);
+	}
+
+	let newTurret = new Turret(Math.floor(Math.random() * width), -TURRET_SIZE, 180);
+	if (newTurret.canSpawn(turrets, astroids, score, timeSinceLastTurret, packs)) {
+		timeSinceLastTurret = 0;
+		turrets.push(newTurret);
+	}
+}
+
+function updatePacks() {
+	for (let pack of packs) {
+		pack.updatePos();
+	}
+	let newPack = new Health(Math.floor(Math.random() * width), -PACK_WIDTH);
+	switch (Math.floor(Math.random() * 2)) {
+		case 0:
+			newPack = new Health(Math.floor(Math.random() * width), -PACK_WIDTH);
+			break;
+		case 1:
+			newPack = new Ammo(Math.floor(Math.random() * width), -PACK_WIDTH);
+			break;
+	}
+	if (newPack.canSpawn(astroids, packs, turrets)) {
+		packs.push(newPack);
+	}
+}
+
+function drawPacks() {
+	for (let pack of packs) {
+		pack.draw();
+	}
+}
+
+function drawAstroids() {
+	for (let a of astroids) {
+		a.draw();
+	}
+	for (let t of turrets) {
+		t.draw();
 	}
 }
 
 function drawBullets() {
 	for (var i = bullets.length - 1; i >= 0; i--) {
-		circle(bullets[i].x, bullets[i].y, bullets[i].getDiam());
+		bullets[i].draw();
+	}
+	for (var i = enemyBullets.length - 1; i >= 0; i--) {
+		enemyBullets[i].draw();
 	}
 }
 
@@ -156,400 +363,78 @@ function updateBullets() {
 			bullets.splice(i, 1);
 		}
 	}
+
+	for (var i = enemyBullets.length - 1; i >= 0; i--) {
+		enemyBullets[i].updatePos();
+		if (enemyBullets[i].x < 0 || enemyBullets[i].x > width || enemyBullets[i].y < 0 || enemyBullets[i].y > height) {
+			enemyBullets.splice(i, 1);
+		}
+	}
 }
 
 function checkBulletCollision() {
-	for (var i = bullets.length - 1; i >= 0; i--) {
-		let dx = ship1.x - bullets[i].x;
-		let dy = ship1.y - bullets[i].y;
-		let distance = Math.sqrt(dx * dx + dy * dy);
-		if (distance < ship1.getHeight() / 2 + bullets[i].getDiam() / 2) {
-			ship1.health = ship1.health == 0 ? 0 : ship1.health - 1;
-			bullets.splice(i, 1);
+	for (var i = enemyBullets.length - 1; i >= 0; i--) {
+		let triPoly = [];
+		triPoly[0] = createVector(ship1.x - SHIP_WIDTH / 2, ship1.y + SHIP_HEIGHT / 2);
+		triPoly[1] = createVector(ship1.x, ship1.y - SHIP_HEIGHT / 2);
+		triPoly[2] = createVector(ship1.x + SHIP_WIDTH / 2, ship1.y + SHIP_HEIGHT / 2);
+		if (
+			ship1.sheild &&
+			collideCircleCircle(ship1.x, ship1.y, SHIP_HEIGHT + 10, enemyBullets[i].x, enemyBullets[i].y, BULLET_DIAM)
+		) {
+			enemyBullets.splice(i, 1);
+		} else if (collideCirclePoly(enemyBullets[i].x, enemyBullets[i].y, BULLET_DIAM, triPoly)) {
+			ship1.health = ship1.health == 0 ? 0 : ship1.health - 20;
+			enemyBullets.splice(i, 1);
 		}
 	}
 	for (var i = bullets.length - 1; i >= 0; i--) {
-		let dx = ship2.x - bullets[i].x;
-		let dy = ship2.y - bullets[i].y;
-		let distance = Math.sqrt(dx * dx + dy * dy);
-		if (distance < ship2.getHeight() / 2 + bullets[i].getDiam() / 2) {
-			ship2.health = ship2.health == 0 ? 0 : ship2.health - 1;
-			bullets.splice(i, 1);
-		}
-	}
-	// if(ship1.health == 0 || ship2.health == 0) {
-	//   ship1 = new Ship(ship1StartX, ship1StartY, 0, 0, 0, width, height);
-	//   ship2 = new Ship(ship2StartX, ship2StartY, 0, 0, 0, width, height);
-	// }
-}
-
-function checkSingleHealthCollision(ship) {
-	var distX = Math.abs(ship.x - healthPack.x - PACK_WIDTH / 2);
-	var distY = Math.abs(ship.y - healthPack.y - PACK_WIDTH / 2);
-
-	if (distX > PACK_WIDTH / 2 + ship.getHeight()) {
-		return false;
-	}
-	if (distY > PACK_WIDTH / 2 + ship.getHeight()) {
-		return false;
-	}
-
-	if (distX <= PACK_WIDTH / 2) {
-		return true;
-	}
-	if (distY <= PACK_WIDTH / 2) {
-		return true;
-	}
-
-	var dx = distX - PACK_WIDTH / 2;
-	var dy = distY - PACK_WIDTH / 2;
-	return dx * dx + dy * dy <= ship.getHeight() * ship.getHeight();
-}
-
-function checkHealthCollisions() {
-	if (checkSingleHealthCollision(ship1)) {
-		ship1.health = ship1.health + 10 > 10 ? 10 : ship1.health + 5;
-		healthPack.updatePos(Math.floor(Math.random() * width), Math.floor(Math.random() * height));
-	}
-	if (checkSingleHealthCollision(ship2)) {
-		ship2.health = ship2.health + 10 > 10 ? 10 : ship2.health + 5;
-		healthPack.updatePos(Math.floor(Math.random() * width), Math.floor(Math.random() * height));
-	}
-}
-
-let ShipWorld = function () {
-	this.reset();
-};
-ShipWorld.prototype = {
-	reset: function () {
-		ship1 = new Ship(ship1StartX, ship1StartY, 0, 0, 0, width, height);
-		ship2 = new Ship(ship2StartX, ship2StartY, 0, 0, 0, width, height);
-	},
-	getNumStates: function () {
-		return 7;
-	},
-	getMaxNumActions: function () {
-		return 3;
-	},
-	// getState: function () {
-	// 	return [
-	// 		ship1.x,
-	// 		ship1.y,
-	// 		ship2.x,
-	// 		ship2.y,
-	// 		ship1.vx,
-	// 		ship1.vy,
-	// 		ship2.vx,
-	// 		ship2.vy,
-	// 		ship1.angle,
-	// 		ship2.angle,
-	// 		healthPack.x,
-	// 		healthPack.y,
-	// 		bullets[0] ? bullets[0].vx : 0,
-	// 		bullets[0] ? bullets[0].vy : 0,
-	// 		ship1.health,
-	// 		ship2.health,
-	// 	];
-	// },
-	getState: function () {
-		return [
-			ship1.x,
-			ship1.y,
-			ship1.vx,
-			ship1.vy,
-			ship1.angle,
-			healthPack.x,
-			healthPack.y,
-		];
-	},
-	sampleNextState: function (a) {
-		if (a === 0) {
-			// ship2.thrust();
-			ship2.rotate(0);
-		}
-		if (a === 1) ship2.rotate(1);
-		// if (a === 2) {
-		// 	ship2.rotate(0);
-		// }
-		// if (a === 3){
-		// 	if (ship2.lastShotTime > 20) {
-		// 		ship2.shoot();
-		// 		bullets.push(new Bullet(ship2.x, ship2.y, ship2.angle, width, height));
-		// 	}
-		// } 
-		ship2.lastShotTime = ship2.lastShotTime + 1;
-		ship1.lastShotTime = ship1.lastShotTime + 1;
-
-		ship1.updatePos();
-		ship2.updatePos();
-		updateBullets();
-		checkBulletCollision();
-		
-
-		// compute reward
-		// let br = 0;
-		// for (bullet of bullets) {
-		// 	let d1 = Math.sqrt(
-		// 		(bullet.x - ship1.x) * (bullet.x - ship1.x) + (bullet.y - ship1.y) * (bullet.y - ship1.y)
-		// 	);
-		// 	let d2 = Math.sqrt(
-		// 		(bullet.x - ship2.x) * (bullet.x - ship2.x) + (bullet.y - ship2.y) * (bullet.y - ship2.y)
-		// 	);
-		// 	br = br + d1;
-		// }
-		// br = br/(bullets.length+1);
-		// br = -br;
-
-		let d3 = Math.sqrt(
-			(healthPack.x - ship2.x) * (healthPack.x - ship2.x) + (healthPack.y - ship2.y) * (healthPack.y - ship2.y));
-		// let d4 = Math.sqrt(
-		// 	(width/2 - ship2.x) * (width/2 - ship2.x) + (height/2 - ship2.y) * (height/2 - ship2.y));
-		// d3 = -d3/2;
-		// d4 = -d4/2;
-		// (ship2.health - ship1.health) * 200 + 
-		let angle = 180 - Math.atan2((healthPack.x - ship2.x) , (healthPack.y - ship2.y))*180/Math.PI;
-		
-		let r = 0;// -d3;
-		r = r - Math.abs(angle - ship2.angle) * 5;
-		// if(checkSingleHealthCollision(ship2)) {
-		// 	r = r + 100000;
-		// }
-		checkHealthCollisions();
-
-		var ns = this.getState();
-		var out = { ns: ns, r: r };
-		return out;
-	},
-};
-
-function start() {
-	env = new ShipWorld();
-	//agent = new RL.ActorCritic(env, spec);
-	agent = new RL.DQNAgent(env, spec);
-	initFlot();
-	$('#slider').slider({
-		min: 0,
-		max: 1,
-		value: agent.epsilon,
-		step: 0.01,
-		slide: function (event, ui) {
-			agent.epsilon = ui.value;
-			$('#eps').html(ui.value.toFixed(2));
-		},
-	});
-	$('#eps').html(agent.epsilon.toFixed(2));
-	togglelearn();
-}
-
-function gofast() { steps_per_tick = 500; }
-function gonormal() { steps_per_tick = 10; }
-function goslow() { steps_per_tick = 1; }
-
-let ShipWorld2 = function () {
-	this.reset();
-};
-ShipWorld2.prototype = {
-	reset: function () {
-		ship1 = new Ship(ship1StartX, ship1StartY, 0, 0, 0, width, height);
-		ship2 = new Ship(ship2StartX, ship2StartY, 0, 0, 0, width, height);
-	},
-	getNumStates: function () {
-		return 14;
-	},
-	getMaxNumActions: function () {
-		return 5;
-	},
-	getState: function () {
-		return [
-			ship1.x,
-			ship1.y,
-			ship2.x,
-			ship2.y,
-			ship1.vx,
-			ship1.vy,
-			ship2.vx,
-			ship2.vy,
-			healthPack.x,
-			healthPack.y,
-			bullets[0] ? bullets[0].vx : 0,
-			bullets[0] ? bullets[0].vy : 0,
-			ship1.health,
-			ship2.health,
-		];
-	},
-	sampleNextState: function (a) {
-		if (a === 0) {
-			ship1.thrust();
-		}
-		if (a === 1) ship1.rotate(1);
-		if (a === 2) {
-			if (ship1.lastShotTime > 20) {
-				ship1.shoot();
-				bullets.push(new Bullet(ship1.x, ship1.y, ship1.angle, width, height));
+		for (var j = astroids.length - 1; j >= 0; j--) {
+			if (
+				collideCircleCircle(
+					bullets[i].x,
+					bullets[i].y,
+					BULLET_DIAM,
+					astroids[j].x,
+					astroids[j].y,
+					astroids[j].diam
+				)
+			) {
+				astroids[j].hit();
+				bullets.splice(i, 1);
+				break;
 			}
 		}
-
-		// compute reward
-		let br = 0;
-		for (bullet of bullets) {
-			let d1 = Math.sqrt(
-				(bullet.x - ship1.x) * (bullet.x - ship1.x) + (bullet.y - ship1.y) * (bullet.y - ship1.y)
-			);
-			let d2 = Math.sqrt(
-				(bullet.x - ship2.x) * (bullet.x - ship2.x) + (bullet.y - ship2.y) * (bullet.y - ship2.y)
-			);
-			br = br + d1 - d2;
-		}
-		let r = (ship1.health - ship2.health) * 200 + br;
-		var ns = this.getState();
-		var out = { ns: ns, r: r };
-		return out;
-	},
-};
-
-function start2() {
-	env2 = new ShipWorld2();
-	//agent = new RL.ActorCritic(env, spec);
-	agent2 = new RL.DQNAgent(env2, spec);
-	togglelearn2();
-}
-
-function resetAgent() {
-	agent = new RL.DQNAgent(env, spec);
-}
-
-function saveToFile() {
-	var blob = new Blob([JSON.stringify(agent)], {
-		//type: 'application/json'
-		type: 'octet/stream',
-	});
-	console.log(blob);
-
-	var anchor = document.createElement('a');
-	anchor.download = 'output.json';
-	anchor.href = window.URL.createObjectURL(blob);
-	anchor.innerHTML = 'download';
-	anchor.click();
-
-	console.log(anchor);
-	// document.getElementById('output').append(anchor);
-}
-
-function loadFile() {
-	let request = new XMLHttpRequest();
-	request.open('GET', './agent.json', false);
-	request.send(null);
-	let my_JSON_object = JSON.parse(request.responseText);
-	agent.fromJSON(my_JSON_object);
-	agent.epsilon = 0.05;
-	// kill learning rate to not learn
-	agent.alpha = 0;
-}
-
-var steps_per_tick = 1;
-var sid = -1;
-var action, state;
-var smooth_reward_history = [];
-var smooth_reward = null;
-var flott = 0;
-function togglelearn() {
-	if (sid === -1) {
-		sid = setInterval(function () {
-			for (var k = 0; k < steps_per_tick; k++) {
-				state = env.getState();
-				action = agent.act(state);
-				var obs = env.sampleNextState(action);
-				agent.learn(obs.r);
-				if (smooth_reward == null) {
-					smooth_reward = obs.r;
-				}
-				smooth_reward = smooth_reward * 0.999 + obs.r * 0.001;
-				flott += 1;
-				if (flott === 200) {
-					// record smooth reward
-					if (smooth_reward_history.length >= nflot) {
-						smooth_reward_history = smooth_reward_history.slice(1);
-					}
-					smooth_reward_history.push(smooth_reward);
-					flott = 0;
-				}
+		for (var j = turrets.length - 1; j >= 0; j--) {
+			if ( bullets[i] && 
+				collideCircleCircle(
+					bullets[i].x,
+					bullets[i].y,
+					BULLET_DIAM,
+					turrets[j].x,
+					turrets[j].y,
+					TURRET_SIZE
+				)
+			) {
+				turrets.splice(j, 1);
+				bullets.splice(i, 1);
+				break;
 			}
-		}, 20);
-	} else {
-		clearInterval(sid);
-		sid = -1;
+		}
 	}
 }
 
- // flot stuff
- var nflot = 1000;
- function initFlot() {
-   var container = $("#flotreward");
-   var res = getFlotRewards();
-   series = [{
-	 data: res,
-	 lines: {fill: true}
-   }];
-   var plot = $.plot(container, series, {
-	 grid: {
-	   borderWidth: 1,
-	   minBorderMargin: 20,
-	   labelMargin: 10,
-	   backgroundColor: {
-		 colors: ["#FFF", "#e4f4f4"]
-	   },
-	   margin: {
-		 top: 10,
-		 bottom: 10,
-		 left: 10,
-	   }
-	 },
-	 xaxis: {
-	   min: 0,
-	   max: nflot
-	 },
-	 yaxis: {
-	   min: -1000,
-	   max: 1000
-	 }
-   });
-   setInterval(function(){
-	 series[0].data = getFlotRewards();
-	 plot.setData(series);
-	 plot.draw();
-   }, 100);
- }
- function getFlotRewards() {
-   // zip rewards into flot data
-   var res = [];
-   for(var i=0,n=smooth_reward_history.length;i<n;i++) {
-	 res.push([i, smooth_reward_history[i]]);
-   }
-   return res;
- }
-
-var sid2 = -1;
-var action2, state2;
-var smooth_reward_history2 = [];
-var smooth_reward2 = null;
-var flott = 0;
-function togglelearn2() {
-	if (sid2 === -1) {
-		sid2 = setInterval(function () {
-			for (var k = 0; k < steps_per_tick; k++) {
-				state2 = env2.getState();
-				action2 = agent2.act(state);
-				var obs = env2.sampleNextState(action2);
-				agent2.learn(obs.r);
-				if (smooth_reward2 == null) {
-					smooth_reward2 = obs.r;
-				}
-				smooth_reward2 = smooth_reward2 * 0.999 + obs.r * 0.001;
+function checkPackCollisions() {
+	for (var i = packs.length - 1; i >= 0; i--) {
+		if (packs[i].hitShip(ship1)) {
+			if (packs[i] instanceof Health) {
+				ship1.heal(20);
+				packs.splice(i, 1);
+			} else if (packs[i] instanceof Ammo) {
+				ship1.reload();
+				packs.splice(i, 1);
 			}
-		}, 20);
-	} else {
-		clearInterval(sid2);
-		sid2 = -1;
+		}
 	}
 }
 
@@ -560,7 +445,6 @@ function togglelearn2() {
  */
 function onSerialErrorOccurred(eventSender, error) {
 	console.log('onSerialErrorOccurred', error);
-	pHtmlMsg.html(error);
 }
 
 /**
@@ -570,7 +454,9 @@ function onSerialErrorOccurred(eventSender, error) {
  */
 function onSerialConnectionOpened(eventSender) {
 	console.log('onSerialConnectionOpened');
-	pHtmlMsg.html('Serial connection opened successfully');
+	serialWriteHealth();
+	serialWriteEnergy();
+	serialWriteAmmo();
 }
 
 /**
@@ -580,7 +466,6 @@ function onSerialConnectionOpened(eventSender) {
  */
 function onSerialConnectionClosed(eventSender) {
 	console.log('onSerialConnectionClosed');
-	pHtmlMsg.html('onSerialConnectionClosed');
 }
 
 /**
@@ -591,22 +476,24 @@ function onSerialConnectionClosed(eventSender) {
  */
 function onSerialDataReceived(eventSender, newData) {
 	// console.log("onSerialDataReceived", newData);
-	pHtmlMsg.html('onSerialDataReceived: ' + newData);
 	let dataSplit = newData.split(':');
-	if(dataSplit[0] === "ACC") {
+	if (dataSplit[0] === 'ACC') {
 		let acc = dataSplit[1];
-		if(acc > 3) {
-			ship1.rotate(1);
-		} else if(acc < -3) {
-			ship1.rotate(0);
-		}
-	} 
-	
-	if (dataSplit[0] === "THRUST") {
-		ship1.thrust();
+		ship1.vx = -parseFloat(acc) * 3;
 	}
-	if(dataSplit[0] === "HEALTH") {
-		console.log("got it");
+
+	if (dataSplit[0] === 'SHOOT') {
+		if(mode == 0) {
+			mode = 1;
+		} else if(mode == 1) {
+			if (ship1.canShoot()) {
+				ship1.shoot();
+				bullets.push(new Bullet(ship1.x, ship1.y, 0, width, height));
+			}
+		} else {
+			reset();
+		}
+		
 	}
 }
 
@@ -618,4 +505,3 @@ function mouseClicked() {
 		serial.connectAndOpen(null, serialOptions);
 	}
 }
-

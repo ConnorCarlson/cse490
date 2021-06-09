@@ -1,19 +1,16 @@
-const PACK_WIDTH = 20;
 
-class Health {
-	x;
-	y;
+class Health extends Pack{
 
 	constructor(x, y) {
-		this.x = x;
-		this.y = y;
+		super(x, y);
 	}
 
-	updatePos(x, y) {
-		this.x = x;
-		this.y = y;
-	}
-	getWidth() {
-		return PACK_WIDTH;
+	draw() {
+		stroke(76, 224, 101);
+		fill(0);
+		rect(this.x,this.y, PACK_WIDTH, PACK_WIDTH);
+		fill(76, 224, 101);
+		rect(this.x + PACK_WIDTH/5*2, this.y + PACK_WIDTH/5, PACK_WIDTH/5, PACK_WIDTH-PACK_WIDTH/5*2);
+		rect(this.x + PACK_WIDTH/5, this.y + PACK_WIDTH/5*2, PACK_WIDTH-PACK_WIDTH/5*2, PACK_WIDTH/5);
 	}
 }

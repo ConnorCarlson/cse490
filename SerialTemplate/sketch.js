@@ -34,8 +34,8 @@ function setup() {
 function draw() {
   background(220);
   // rotateX(-z*.01);
-  rotateX(-y*.015);
-  rotateZ(-x*.015);
+  rotateX(-y*.02);
+  rotateZ(-x*.02);
   // rotateZ(z*.01)
   // rotateZ(z * 0.0001);
   
